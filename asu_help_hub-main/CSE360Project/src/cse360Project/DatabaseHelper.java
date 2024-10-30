@@ -1,391 +1,462 @@
 package cse360Project;
 
+import java.io.IOException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.core.type.TypeReference;
+import java.io.File;
+import java.io.IOException;
+
 import java.io.UnsupportedEncodingException;
 import java.sql.*;
+
+
+import java.sql.Timestamp;
+import java.util.Date;
+import java.util.Random;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.security.SecureRandom;
+import java.util.Base64;
+import javafx.scene.control.TableRow;
+import javafx.scene.control.TableView;
+
 import java.sql.ResultSet;
 
+/*******
+ * <p> DatabaseHelper Class </p>
+ * 
+ * <p> Description: An database utility class which helps with various controls surrounding the database. </p>
+ * 
+ * <p> Copyright: Carlos Hernandez © 2024 </p>
+ * 
+ * @author Carlos Hernandez
+ * 
+ * @version 1.0.0	2024-10-09 Updated for Phase 1
+ * 
+ */
 class DatabaseHelper {
 
-    // JDBC driver name and database URL
-    static final String JDBC_DRIVER = "org.h2.Driver";
-    static final String DB_URL = "jdbc:h2:~/firstDatabase;AUTO_SERVER=TRUE";
+	// JDBC driver name and database URL 
+	static final String JDBC_DRIVER = "org.h2.Driver";   
+	static final String DB_URL = "jdbc:h2:~/firstDatabase;AUTO_SERVER=TRUE";  
+	
 
-    // Database credentials
-    static final String USER = "sa";
-    static final String PASS = "";
+	//  Database credentials 
+	static final String USER = "sa"; 
+	static final String PASS = ""; 
 
-    private Connection connection = null;
-    private Statement statement = null;
+	private Connection connection = null;
+	private Statement statement = null; 
+	//	PreparedStatement pstmt
+	public void connectToDatabase() throws SQLException {
+		try {
+			Class.forName(JDBC_DRIVER); // Load the JDBC driver
+			System.out.println("Connecting to database...");
+			connection = DriverManager.getConnection(DB_URL, USER, PASS);
+			statement = connection.createStatement(); 
+			createTables();  // Create the necessary tables if they don't exist
+			insertDefaultRoles(); // Insert the default roles if they don't exist
+		} catch (ClassNotFoundException e) {
+			System.err.println("JDBC Driver not found: " + e.getMessage());
+		}
+	}
 
-    public void connectToDatabase() throws SQLException {
-        try {
-            // Load the JDBC driver
-            Class.forName(JDBC_DRIVER); 
-            System.out.println("Connecting to database...");
-            
-            // Establish the connection
-            connection = DriverManager.getConnection(DB_URL, USER, PASS);
-            statement = connection.createStatement(); 
+	private void createTables() throws SQLException {
+		// Updated user table creation
+		String userTable = "CREATE TABLE IF NOT EXISTS users ("
+		        + "id INT AUTO_INCREMENT PRIMARY KEY, "
+		        + "email VARCHAR(255) UNIQUE, "
+		        + "username VARCHAR(255) UNIQUE NOT NULL, "
+		        + "oneTimeFlag BOOLEAN, " 
+		        + "firstName VARCHAR(255), "
+		        + "middleName VARCHAR(255), "  
+		        + "lastName VARCHAR(255), "
+		        + "preferredName VARCHAR(255), " 
+		        + "hashedPassword VARCHAR(255) NOT NULL, "
+		        + "randSalt VARCHAR(255) NOT NULL, "
+		        + "otp VARCHAR(10), " // Column for storing the one-time password
+		        + "otp_expiration TIMESTAMP" // Column for storing the expiration time of the OTP
+		        + ")";
+		statement.execute(userTable);
+		
+		// Create topics table
+		String topicsTable = "CREATE TABLE IF NOT EXISTS user_topics ("
+		        + "user_id INT NOT NULL, "
+		        + "topic_name VARCHAR(255) NOT NULL, "
+		        + "proficiency_level VARCHAR(20) DEFAULT 'intermediate', "
+		        + "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, " // Optional
+		        + "PRIMARY KEY (user_id, topic_name))";
+		
 
-            // Create the necessary tables if they don't exist
-            createTables(); 
-        } catch (ClassNotFoundException e) {
-            // Handle the case where the JDBC driver is not found
-            System.err.println("JDBC Driver not found: " + e.getMessage());
-        } catch (SQLException e) {
-            // Handle any SQL errors that occur during the connection process
-            System.err.println("SQL Exception: " + e.getMessage());
-        }
-    }
+		statement.execute(topicsTable);
+		
+		// Create roles table
+		String rolesTable = "CREATE TABLE IF NOT EXISTS roles ("
+		        + "id INT AUTO_INCREMENT PRIMARY KEY, "
+		        + "role_name VARCHAR(20) UNIQUE NOT NULL)";
+		statement.execute(rolesTable);
+		
+		// Create invitations table
+		String invitationsTable = "CREATE TABLE IF NOT EXISTS invitations ("
+		        + "invite_code VARCHAR(255) PRIMARY KEY, "
+		        + "used BOOLEAN DEFAULT false)";  // Indicates whether the invitation has been used
+		statement.execute(invitationsTable);
+		
+	    // Create invitations roles relationship[ table
+		String invitationsRolesTable = "CREATE TABLE IF NOT EXISTS invitation_roles ("
+		        + "invite_code VARCHAR(255), "
+		        + "role_id INT, "
+		        + "FOREIGN KEY (invite_code) REFERENCES invitations(invite_code) ON DELETE CASCADE, "
+		        + "FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE, "
+		        + "PRIMARY KEY (invite_code, role_id))";
 
-    // Method to create the necessary tables in the database
-    private void createTables() throws SQLException {
-        // Create users table
-        String userTable = "CREATE TABLE IF NOT EXISTS users ("
-                + "id INT AUTO_INCREMENT PRIMARY KEY, "
-                + "email VARCHAR(255) UNIQUE, "
-                + "username VARCHAR(255) UNIQUE NOT NULL, "
-                + "oneTimeFlag BOOLEAN, "
-                + "firstName VARCHAR(255), "
-                + "middleName VARCHAR(255), "
-                + "lastName VARCHAR(255), "
-                + "preferredName VARCHAR(255), "
-                + "hashedPassword VARCHAR(255) NOT NULL, "
-                + "randSalt VARCHAR(255) NOT NULL)";
-        statement.execute(userTable);
-        
-        // Create roles table
-        String rolesTable = "CREATE TABLE IF NOT EXISTS roles ("
-                + "id INT AUTO_INCREMENT PRIMARY KEY, "
-                + "role_name VARCHAR(20) UNIQUE NOT NULL)";
-        statement.execute(rolesTable);
-        
-        // Create invitations table
-        String invitationsTable = "CREATE TABLE IF NOT EXISTS invitations ("
-                + "invite_code VARCHAR(255) PRIMARY KEY, "
-                + "role_id INT NOT NULL, "
-                + "FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE)";
-        statement.execute(invitationsTable);
-
-
-        // Create user_roles join table
-        String userRolesTable = "CREATE TABLE IF NOT EXISTS user_roles ("
-                + "user_id INT NOT NULL, "
-                + "role_id INT NOT NULL, "
-                + "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, "
-                + "FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE, "
-                + "PRIMARY KEY (user_id, role_id))";
-        statement.execute(userRolesTable);
-
-        // Insert default roles
-        insertDefaultRoles();
-    }
-
-    // Method to insert default roles into the roles table
-    private void insertDefaultRoles() throws SQLException {
-        // Insert Admin role if not exists
-        String insertAdmin = "INSERT INTO roles (role_name) "
-                + "SELECT * FROM (SELECT 'admin') AS tmp "
-                + "WHERE NOT EXISTS (SELECT role_name FROM roles WHERE role_name = 'admin') LIMIT 1";
-        statement.execute(insertAdmin);
-
-        // Insert Student role if not exists
-        String insertStudent = "INSERT INTO roles (role_name) "
-                + "SELECT * FROM (SELECT 'student') AS tmp "
-                + "WHERE NOT EXISTS (SELECT role_name FROM roles WHERE role_name = 'student') LIMIT 1";
-        statement.execute(insertStudent);
-
-        // Insert Instructor role if not exists
-        String insertInstructor = "INSERT INTO roles (role_name) "
-                + "SELECT * FROM (SELECT 'instructor') AS tmp "
-                + "WHERE NOT EXISTS (SELECT role_name FROM roles WHERE role_name = 'instructor') LIMIT 1";
-        statement.execute(insertInstructor);
-    }
-
-    // Method to store an invitation code and associated role
-    public void storeInvite(String inviteCode, String role) throws SQLException {
-        // Get role ID from the roles table
-        String getRoleIdQuery = "SELECT id FROM roles WHERE role_name = ?";
-        int roleId;
-
-        try (PreparedStatement getRoleIdStmt = connection.prepareStatement(getRoleIdQuery)) {
-            getRoleIdStmt.setString(1, role);
-            try (ResultSet rs = getRoleIdStmt.executeQuery()) {
-                if (rs.next()) {
-                    roleId = rs.getInt("id");
-                } else {
-                    throw new SQLException("Role not found: " + role);
-                }
-            }
-        }
-
-        // Insert invitation code and role ID into the invitations table
-        String insertInviteQuery = "INSERT INTO invitations (invite_code, role_id) VALUES (?, ?)";
-        try (PreparedStatement insertInviteStmt = connection.prepareStatement(insertInviteQuery)) {
-            insertInviteStmt.setString(1, inviteCode);
-            insertInviteStmt.setInt(2, roleId);
-            insertInviteStmt.executeUpdate();
-        }
-    }
-
-    // Method to validate an invitation code
-    public boolean validateInvitationCode(String inviteCode) throws SQLException {
-        String query = "SELECT * FROM invitations WHERE invite_code = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
-            pstmt.setString(1, inviteCode);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                return rs.next(); // Returns true if the invitation code exists
-            }
-        }
-    }
-
-    // Method to complete registration with an invitation code
-    public void completeRegistrationWithInvite(String username, String email, String firstName, String lastName, String password, String inviteCode) throws Exception {
-        String getInviteQuery = "SELECT role_id FROM invitations WHERE invite_code = ?";
-        String deleteInviteQuery = "DELETE FROM invitations WHERE invite_code = ?";
-
-        int roleId;
-
-        try {
-            connection.setAutoCommit(false); // Start transaction
-
-            // Get the role ID associated with the invitation code
-            try (PreparedStatement getInviteStmt = connection.prepareStatement(getInviteQuery)) {
-                getInviteStmt.setString(1, inviteCode);
-                try (ResultSet rs = getInviteStmt.executeQuery()) {
-                    if (rs.next()) {
-                        roleId = rs.getInt("role_id");
-                    } else {
-                        throw new Exception("Invalid invitation code.");
-                    }
-                }
-            }
-
-            // Register the user
-            registerUserWithRoleId(username, email, password, firstName, lastName, roleId);
-
-            // Invalidate the invitation code
-            try (PreparedStatement deleteInviteStmt = connection.prepareStatement(deleteInviteQuery)) {
-                deleteInviteStmt.setString(1, inviteCode);
-                deleteInviteStmt.executeUpdate();
-            }
-
-            connection.commit(); // Commit transaction
-        } catch (Exception e) {
-            connection.rollback(); // Rollback transaction if something goes wrong
-            throw e;
-        } finally {
-            connection.setAutoCommit(true); // Restore auto-commit mode
-        }
-    }
-
-    // Helper method to register a user with a specific role ID
-    private void registerUserWithRoleId(String username, String email, String password, String firstName, String lastName, int roleId) throws Exception {
-        var passwd = new Password(password);
-        String hashedPassword = Base64.getEncoder().encodeToString(passwd.getHashedPass());
-        String randSalt = Base64.getEncoder().encodeToString(passwd.getSalt());
-
-        String insertUser = "INSERT INTO users (username, email, hashedPassword, randSalt, firstName, lastName) VALUES (?, ?, ?, ?, ?, ?)";
-        String getUserId = "SELECT id FROM users WHERE username = ?";
-        String insertUserRole = "INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)";
-
-        // Insert user into users table
-        try (PreparedStatement pstmtUser = connection.prepareStatement(insertUser)) {
-            pstmtUser.setString(1, username);
-            pstmtUser.setString(2, email);
-            pstmtUser.setString(3, hashedPassword);
-            pstmtUser.setString(4, randSalt);
-            pstmtUser.setString(5, firstName);
-            pstmtUser.setString(6, lastName);
-            pstmtUser.executeUpdate();
-        }
-
-        // Get user ID
-        int userId;
-        try (PreparedStatement pstmtGetUserId = connection.prepareStatement(getUserId)) {
-            pstmtGetUserId.setString(1, username);
-            try (ResultSet rs = pstmtGetUserId.executeQuery()) {
-                if (rs.next()) {
-                    userId = rs.getInt("id");
-                } else {
-                    throw new Exception("User registration failed. User ID not found.");
-                }
-            }
-        }
-
-        // Insert into user_roles table
-        try (PreparedStatement pstmtUserRole = connection.prepareStatement(insertUserRole)) {
-            pstmtUserRole.setInt(1, userId);
-            pstmtUserRole.setInt(2, roleId);
-            pstmtUserRole.executeUpdate();
-        }
-    }
-
-    // Method to delete the tables from the database
-    public void dropTables() throws SQLException {
-
-        String dropQuery = "DROP TABLE IF EXISTS user_topics";
-        statement.executeUpdate(dropQuery);
-
-        dropQuery = "DROP TABLE IF EXISTS user_roles";
-        statement.executeUpdate(dropQuery);
-
-        // Now drop the users and roles tables
-        dropQuery = "DROP TABLE IF EXISTS users";
-        statement.executeUpdate(dropQuery);
-
-        dropQuery = "DROP TABLE IF EXISTS roles";
-        statement.executeUpdate(dropQuery);
-
-        System.out.println("Tables have been dropped.");
-    }
-
-    // Check if the database is empty
-    public boolean isDatabaseEmpty() throws SQLException {
-        String query = "SELECT COUNT(*) AS count FROM users";
-        ResultSet resultSet = statement.executeQuery(query);
-        if (resultSet.next()) {
-            return resultSet.getInt("count") == 0;
-        }
-        return true;
-    }
-
-    // Method to empty the database by deleting all records from the relevant table(s)
-    public void emptyDatabase() throws SQLException {
-        String deleteQuery = "DELETE FROM users";
-        // Execute the delete query
-        statement.executeUpdate(deleteQuery);
-
-        deleteQuery = "DELETE FROM user_topics";
-        statement.executeUpdate(deleteQuery);
-
-        System.out.println("Database has been emptied.");
-    }
-
-    public void register(String username, String password, String role) throws Exception {
-        var passwd = new Password(password);
-        String hashedPassword = Base64.getEncoder().encodeToString(passwd.getHashedPass());
-        String randSalt = Base64.getEncoder().encodeToString(passwd.getSalt());
-
-        // Insert user into users table
-        String insertUser = "INSERT INTO users (username, hashedPassword, randSalt) VALUES (?, ?, ?)";
-        String getUserId = "SELECT id FROM users WHERE username = ?";
-        String getRoleId = "SELECT id FROM roles WHERE role_name = ?";
-        String insertUserRole = "INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)";
-
-        try {
-            connection.setAutoCommit(false); // Start transaction
-
-            // Insert user into users table
-            try (PreparedStatement pstmtUser = connection.prepareStatement(insertUser)) {
-                pstmtUser.setString(1, username);
-                pstmtUser.setString(2, hashedPassword);
-                pstmtUser.setString(3, randSalt);
-                pstmtUser.executeUpdate();
-            }
-
-            // Get user ID
-            int userId;
-            try (PreparedStatement pstmtGetUserId = connection.prepareStatement(getUserId)) {
-                pstmtGetUserId.setString(1, username);
-                try (ResultSet rs = pstmtGetUserId.executeQuery()) {
-                    if (rs.next()) {
-                        userId = rs.getInt("id");
-                    } else {
-                        throw new Exception("User registration failed. User ID not found.");
-                    }
-                }
-            }
-
-            // Get role ID
-            int roleId;
-            try (PreparedStatement pstmtGetRoleId = connection.prepareStatement(getRoleId)) {
-                pstmtGetRoleId.setString(1, role);
-                try (ResultSet rs = pstmtGetRoleId.executeQuery()) {
-                    if (rs.next()) {
-                        roleId = rs.getInt("id");
-                    } else {
-                        throw new Exception("Invalid role provided.");
-                    }
-                }
-            }
-
-            // Insert into user_roles table
-            try (PreparedStatement pstmtUserRole = connection.prepareStatement(insertUserRole)) {
-                pstmtUserRole.setInt(1, userId);
-                pstmtUserRole.setInt(2, roleId);
-                pstmtUserRole.executeUpdate();
-            }
-
-            connection.commit(); // Commit transaction
-        } catch (Exception e) {
-            connection.rollback(); // Rollback transaction if something goes wrong
-            throw e;
-        } finally {
-            connection.setAutoCommit(true); // Restore auto-commit mode
-        }
-    }
-
-    // Additional methods such as login, etc.
+		statement.execute(invitationsRolesTable);
 
 
-	public boolean login(String username, String password) throws Exception {
+		// Create user_roles join table
+		String userRolesTable = "CREATE TABLE IF NOT EXISTS user_roles ("
+		        + "user_id INT NOT NULL, "
+		        + "role_id INT NOT NULL, "
+		        + "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, "
+		        + "FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE, "
+		        + "PRIMARY KEY (user_id, role_id))";
+		statement.execute(userRolesTable);
+		
+		 // Create help_articles table
+	    String helpArticlesTable = "CREATE TABLE IF NOT EXISTS help_articles ("
+	            + "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+	            + "header VARCHAR(255), "
+	            + "title VARCHAR(255) NOT NULL, "
+	            + "short_description TEXT, "
+	            + "body_content TEXT, "
+	            + "keywords TEXT, " // Can store keywords as a comma-separated string
+	            + "links TEXT"      // Can store links as a comma-separated string
+	            + ")";
+	    statement.execute(helpArticlesTable);
+
+	    // Create article_groups table
+	    String articleGroupsTable = "CREATE TABLE IF NOT EXISTS article_groups ("
+	            + "article_id BIGINT NOT NULL, "
+	            + "group_name VARCHAR(255) NOT NULL, "
+	            + "FOREIGN KEY (article_id) REFERENCES help_articles(id) ON DELETE CASCADE, "
+	            + "PRIMARY KEY (article_id, group_name))";
+	    statement.execute(articleGroupsTable);
+	}
+	
+	// insert default roles into roles table if not already there 
+	private void insertDefaultRoles() throws SQLException {
+	    // Insert Admin role if not exists
+	    String insertAdmin = "INSERT INTO roles (role_name) "
+	            + "SELECT * FROM (SELECT 'admin') AS tmp "
+	            + "WHERE NOT EXISTS (SELECT role_name FROM roles WHERE role_name = 'admin') LIMIT 1";
+	    statement.execute(insertAdmin);
+
+	    // Insert Student role if not exists
+	    String insertStudent = "INSERT INTO roles (role_name) "
+	            + "SELECT * FROM (SELECT 'student') AS tmp "
+	            + "WHERE NOT EXISTS (SELECT role_name FROM roles WHERE role_name = 'student') LIMIT 1";
+	    statement.execute(insertStudent);
+
+	    // Insert Instructor role if not exists
+	    String insertInstructor = "INSERT INTO roles (role_name) "
+	            + "SELECT * FROM (SELECT 'instructor') AS tmp "
+	            + "WHERE NOT EXISTS (SELECT role_name FROM roles WHERE role_name = 'instructor') LIMIT 1";
+	    statement.execute(insertInstructor);
+	}
+	
+	// Method to validate an invitation code and store the roles in the session
+	public boolean validateInvitationCode(String inviteCode) throws SQLException {
+	    String query = "SELECT used FROM invitations WHERE invite_code = ?";
+	    String updateQuery = "UPDATE invitations SET used = true WHERE invite_code = ?";
+	    String rolesQuery = "SELECT r.role_name FROM roles r "
+	                      + "JOIN invitation_roles ir ON r.id = ir.role_id "
+	                      + "WHERE ir.invite_code = ?";
+
+	    // Check if the invitation exists and is not used
+	    try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+	        pstmt.setString(1, inviteCode);
+	        try (ResultSet rs = pstmt.executeQuery()) {
+	            if (rs.next()) {
+	                boolean isUsed = rs.getBoolean("used");
+	                if (!isUsed) {
+	                    // Mark the invitation as used
+	                    try (PreparedStatement updatePstmt = connection.prepareStatement(updateQuery)) {
+	                        updatePstmt.setString(1, inviteCode);
+	                        updatePstmt.executeUpdate();
+	                    }
+
+	                    // Retrieve all associated roles for this invitation
+	                    try (PreparedStatement rolesPstmt = connection.prepareStatement(rolesQuery)) {
+	                        rolesPstmt.setString(1, inviteCode);
+	                        try (ResultSet rolesRs = rolesPstmt.executeQuery()) {
+	                            List<String> roleNames = new ArrayList<>();
+	                            while (rolesRs.next()) {
+	                                roleNames.add(rolesRs.getString("role_name"));
+	                            }
+
+	                            // Store the roles in the session
+	                            Session session = Session.getInstance();
+	                            session.setInvitedRoles(roleNames); // Store roles as a comma-separated string
+	                        }
+	                    }
+	                    return true; // Invitation code is valid and marked as used
+	                }
+	            }
+	        }
+	    }
+	    return false; // Invitation code is invalid or already used
+	}
+	
+
+	// Method to store an invitation code and associated roles
+	public void storeInvite(String inviteCode, List<String> roles) throws SQLException {
+	    // Insert invitation code into the invitations table (no role_id here)
+	    String insertInviteQuery = "INSERT INTO invitations (invite_code, used) VALUES (?, false)";
+	    
+	    try (PreparedStatement insertInviteStmt = connection.prepareStatement(insertInviteQuery)) {
+	        insertInviteStmt.setString(1, inviteCode);
+	        insertInviteStmt.executeUpdate();
+	    }
+
+	    // Insert each role associated with the invitation into the invitation_roles table
+	    String getRoleIdQuery = "SELECT id FROM roles WHERE role_name = ?";
+	    String insertRoleQuery = "INSERT INTO invitation_roles (invite_code, role_id) VALUES (?, ?)";
+
+	    for (String role : roles) {
+	        int roleId;
+
+	        // Get the role ID for each role
+	        try (PreparedStatement getRoleIdStmt = connection.prepareStatement(getRoleIdQuery)) {
+	            getRoleIdStmt.setString(1, role);
+	            try (ResultSet rs = getRoleIdStmt.executeQuery()) {
+	                if (rs.next()) {
+	                    roleId = rs.getInt("id");
+	                } else {
+	                    throw new SQLException("Role not found: " + role);
+	                }
+	            }
+	        }
+
+	        // Insert the invite code and role ID into the invitation_roles table
+	        try (PreparedStatement insertRoleStmt = connection.prepareStatement(insertRoleQuery)) {
+	            insertRoleStmt.setString(1, inviteCode);
+	            insertRoleStmt.setInt(2, roleId);
+	            insertRoleStmt.executeUpdate();
+	        }
+	    }
+	}
+
+	
+	// Method to delete the tables from the database
+	public void dropTables() throws SQLException {
+
+	    String dropQuery = "DROP TABLE IF EXISTS user_topics"; 
+	    statement.executeUpdate(dropQuery);
+	    
+	    dropQuery = "DROP TABLE IF EXISTS user_roles"; 
+	    statement.executeUpdate(dropQuery);
+	    
+	    dropQuery = "DROP TABLE IF EXISTS invitation_roles";
+	    statement.executeUpdate(dropQuery);
+
+	    dropQuery = "DROP TABLE IF EXISTS invitations";
+	    statement.executeUpdate(dropQuery);
+	    
+	    // Now drop the users and roles tables
+	    dropQuery = "DROP TABLE IF EXISTS users";
+	    statement.executeUpdate(dropQuery);
+	    
+	    dropQuery = "DROP TABLE IF EXISTS roles";
+	    statement.executeUpdate(dropQuery);
+	    
+	    System.out.println("Tables have been dropped.");
+	}
+
+
+	// Check if the database is empty
+	public boolean isDatabaseEmpty() throws SQLException {
+		String query = "SELECT COUNT(*) AS count FROM users";
+		ResultSet resultSet = statement.executeQuery(query);
+		if (resultSet.next()) {
+			return resultSet.getInt("count") == 0;
+		}
+		return true;
+	}
+	
+	// Method to empty the database by deleting all records from the relevant table(s)
+	public void emptyDatabase() throws SQLException {
+	    String deleteQuery = "DELETE FROM users";
+	    
+	    // Execute the delete query
+	    statement.executeUpdate(deleteQuery);
+	    
+	    deleteQuery = "DELETE FROM user_topics";
+	    
+	    statement.executeUpdate(deleteQuery);
+	    
+	    System.out.println("Database has been emptied.");
+	}
+
+
+	public void register(String username, String password, List<String> roles) throws Exception {
+	    var passwd = new Password(password);
+	    String hashedPassword = Base64.getEncoder().encodeToString(passwd.getHashedPass());
+	    String randSalt = Base64.getEncoder().encodeToString(passwd.getSalt());
+
+	    String insertUser = "INSERT INTO users (username, hashedPassword, randSalt) VALUES (?, ?, ?)";
+	    String getUserId = "SELECT id FROM users WHERE username = ?";
+	    String getRoleId = "SELECT id FROM roles WHERE role_name = ?";
+	    String insertUserRole = "INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)";
+
+	    try {
+	        connection.setAutoCommit(false); // Start transaction
+
+	        // Insert user into users table
+	        try (PreparedStatement pstmtUser = connection.prepareStatement(insertUser)) {
+	            pstmtUser.setString(1, username);
+	            pstmtUser.setString(2, hashedPassword);
+	            pstmtUser.setString(3, randSalt);
+	            pstmtUser.executeUpdate();
+	        }
+
+	        // Get user ID
+	        int userId;
+	        try (PreparedStatement pstmtGetUserId = connection.prepareStatement(getUserId)) {
+	            pstmtGetUserId.setString(1, username);
+	            try (ResultSet rs = pstmtGetUserId.executeQuery()) {
+	                if (rs.next()) {
+	                    userId = rs.getInt("id");
+	                } else {
+	                    throw new Exception("User registration failed. User ID not found.");
+	                }
+	            }
+	        }
+
+	        // Iterate through the roles and insert each role for the user
+	        for (String role : roles) {
+	            int roleId;
+	            try (PreparedStatement pstmtGetRoleId = connection.prepareStatement(getRoleId)) {
+	                pstmtGetRoleId.setString(1, role);
+	                try (ResultSet rs = pstmtGetRoleId.executeQuery()) {
+	                    if (rs.next()) {
+	                        roleId = rs.getInt("id");
+	                    } else {
+	                        throw new Exception("Invalid role provided: " + role);
+	                    }
+	                }
+	            }
+
+	            // Insert into user_roles table
+	            try (PreparedStatement pstmtUserRole = connection.prepareStatement(insertUserRole)) {
+	                pstmtUserRole.setInt(1, userId);
+	                pstmtUserRole.setInt(2, roleId);
+	                pstmtUserRole.executeUpdate();
+	            }
+	        }
+
+	        connection.commit(); // Commit transaction
+	    } catch (Exception e) {
+	        connection.rollback(); // Rollback transaction if something goes wrong
+	        throw e;
+	    } finally {
+	        connection.setAutoCommit(true); // Restore auto-commit mode
+	    }
+	}
+	
+	public boolean login(String username, String passwordOrOtp) throws Exception {
 	    String query = "SELECT * FROM users WHERE username = ?";
 	    String getUserRoles = "SELECT r.role_name FROM roles r "
 	                        + "JOIN user_roles ur ON r.id = ur.role_id "
 	                        + "WHERE ur.user_id = ?";
-	    
+
 	    try (PreparedStatement pstmt = connection.prepareStatement(query)) {
 	        pstmt.setString(1, username);
 
 	        try (ResultSet rs = pstmt.executeQuery()) {
 	            if (rs.next()) {
-	                // Retrieve the salt and hashed password from the database
+	                // Attempt to log in with the password
 	                String hashedPassword = rs.getString("hashedPassword");
 	                String randSalt = rs.getString("randSalt");
 
 	                // Use your password verification method to compare
-	                boolean isValidPassword = Password.verifyPassword(password, 
+	                boolean isValidPassword = Password.verifyPassword(passwordOrOtp, 
 	                                        Base64.getDecoder().decode(randSalt), 
 	                                        Base64.getDecoder().decode(hashedPassword));
 
 	                if (isValidPassword) {
-	                    // Retrieve user details
-	                    int userId = rs.getInt("id");
-	                    String email = rs.getString("email");
-	                    String firstName = rs.getString("firstName");
-	                    String lastName = rs.getString("lastName");
-	                    String preferredName = rs.getString("preferredName");
-
-	                    // Fetch user roles from user_roles tablex
-	                    List<String> roles = new ArrayList<>();
-	                    try (PreparedStatement pstmtRoles = connection.prepareStatement(getUserRoles)) {
-	                        pstmtRoles.setInt(1, userId);
-	                        try (ResultSet rsRoles = pstmtRoles.executeQuery()) {
-	                            while (rsRoles.next()) {
-	                                roles.add(rsRoles.getString("role_name"));
-	                            }
-	                        }
-	                    }
-
-	                    // Set user session
-	                    if (firstName != null) {
-	                        System.out.println("set up!");
-	                        Session.getInstance().setUser(userId, username, email, firstName, lastName, preferredName, roles);
-	                    } else {
-	                        // Only guaranteed values
-	                        System.out.println("missing set up");
-	                        Session.getInstance().setUser(userId, username, roles);
-	                    }
+	                    // Password login successful; proceed to set user session
+	                    setUserSession(rs);
+	                    Session.getInstance().setOTPUsed(false);
 	                    return true; // Successful login
+	                } else {
+	                    // Check if the user is trying to log in with an OTP
+	                    String storedOtp = rs.getString("otp");
+	                    Timestamp otpExpiration = rs.getTimestamp("otp_expiration");
+
+	                    // Verify the OTP and check for expiration
+	                    if (storedOtp != null && storedOtp.equals(passwordOrOtp) && 
+	                        (otpExpiration != null && otpExpiration.after(new Timestamp(System.currentTimeMillis())))) {
+	                        // Clear the OTP to make it one-time use
+	                        clearOtp(username);
+
+	                        // Proceed to set user session
+	                        setUserSession(rs);
+	                        Session.getInstance().setOTPUsed(true);
+	                        return true; // Successful OTP login
+	                    }
 	                }
 	            }
 	        }
 	    }
 	    return false; // Invalid login
+	}
+
+	private void setUserSession(ResultSet rs) throws SQLException {
+	    // Retrieve user details
+	    int userId = rs.getInt("id");
+	    String email = rs.getString("email");
+	    String firstName = rs.getString("firstName");
+	    String lastName = rs.getString("lastName");
+	    String preferredName = rs.getString("preferredName");
+
+	    // Fetch user roles from user_roles table
+	    List<String> roles = new ArrayList<>();
+	    String getUserRoles = "SELECT r.role_name FROM roles r "
+	                        + "JOIN user_roles ur ON r.id = ur.role_id "
+	                        + "WHERE ur.user_id = ?";
+	    
+	    try (PreparedStatement pstmtRoles = connection.prepareStatement(getUserRoles)) {
+	        pstmtRoles.setInt(1, userId);
+	        try (ResultSet rsRoles = pstmtRoles.executeQuery()) {
+	            while (rsRoles.next()) {
+	                roles.add(rsRoles.getString("role_name"));
+	            }
+	        }
+	    }
+
+	    // Set user session
+	    if (firstName != null) {
+	        Session.getInstance().setUser(userId, rs.getString("username"), email, firstName, lastName, preferredName, roles);
+	    } else {
+	        // Only guaranteed values
+	        System.out.println("missing set up");
+	        Session.getInstance().setUser(userId, rs.getString("username"), roles);
+	    }
+	}
+
+	private void clearOtp(String username) throws SQLException {
+	    String clearOtpSql = "UPDATE users SET otp = NULL, otp_expiration = NULL WHERE username = ?";
+	    try (PreparedStatement clearOtpStmt = connection.prepareStatement(clearOtpSql)) {
+	        clearOtpStmt.setString(1, username);
+	        clearOtpStmt.executeUpdate();
+	    }
 	}
 	
 	public boolean doesUserExist(String email) {
@@ -436,15 +507,119 @@ class DatabaseHelper {
 	        }
 	    }
 	}
-
 	
+
+	public void resetUserPassword(String username) throws Exception {
+	    String selectUserSql = "SELECT id FROM users WHERE username = ?";
+	    String newPassword = generateRandomPassword(); // Generate a new password
+	    Password pass = new Password(newPassword);
+	    
+	    // Generate OTP and expiration time
+	    String otp = generateOneTimePassword();
+	    Timestamp expirationTime = new Timestamp(System.currentTimeMillis() + (24 * 3600000)); // 24 hour expiration
+
+	    try (PreparedStatement selectStmt = connection.prepareStatement(selectUserSql)) {
+	        selectStmt.setString(1, username);
+	        ResultSet rs = selectStmt.executeQuery();
+
+	        if (rs.next()) {
+	            int userId = rs.getInt("id");
+
+	            // Update the user's OTP and expiration time
+	            String updatePasswordSql = "UPDATE users SET hashedPassword = ?, randSalt = ?, otp = ?, otp_expiration = ? WHERE id = ?";
+	            try (PreparedStatement updateStmt = connection.prepareStatement(updatePasswordSql)) {
+	                updateStmt.setString(1, Base64.getEncoder().encodeToString(pass.getHashedPass()));
+	                updateStmt.setString(2, Base64.getEncoder().encodeToString(pass.getSalt())); // Generate a new salt if necessary
+	                updateStmt.setString(3, otp);
+	                updateStmt.setTimestamp(4, expirationTime);
+	                updateStmt.setInt(5, userId);
+	                updateStmt.executeUpdate();
+	            }
+	            System.out.println("Password reset successfully for user: " + username);
+	            // Optionally, send the OTP to the user via email or display it
+	        } else {
+	            System.out.println("User not found: " + username);
+	        }
+	    } catch (SQLException e) {
+	        e.printStackTrace();
+	    }
+	}
+	
+	public void updateUserPassword(String username, String newPassword) throws Exception {
+	    String selectUserSql = "SELECT id FROM users WHERE username = ?";
+	    Password pass = new Password(newPassword); // Create Password instance with the new password
+
+	    try (PreparedStatement selectStmt = connection.prepareStatement(selectUserSql)) {
+	        selectStmt.setString(1, username);
+	        ResultSet rs = selectStmt.executeQuery();
+
+	        if (rs.next()) {
+	            int userId = rs.getInt("id");
+
+	            // Update the user's password
+	            String updatePasswordSql = "UPDATE users SET hashedPassword = ?, randSalt = ? WHERE id = ?";
+	            try (PreparedStatement updateStmt = connection.prepareStatement(updatePasswordSql)) {
+	                updateStmt.setString(1, Base64.getEncoder().encodeToString(pass.getHashedPass()));
+	                updateStmt.setString(2, Base64.getEncoder().encodeToString(pass.getSalt())); // Generate a new salt if necessary
+	                updateStmt.setInt(3, userId);
+	                updateStmt.executeUpdate();
+	            }
+	            System.out.println("Password updated successfully for user: " + username);
+	            // Optionally, notify the user about the successful password change
+	        } else {
+	            System.out.println("User not found: " + username);
+	        }
+	    } catch (SQLException e) {
+	        e.printStackTrace();
+	    }
+	}
+
+	private String generateOneTimePassword() {
+	    int length = 6; // Length of the OTP
+	    Random random = new Random();
+	    StringBuilder otp = new StringBuilder();
+	    for (int i = 0; i < length; i++) {
+	        otp.append(random.nextInt(10)); // Append random digit
+	    }
+	    System.out.println("OTP Generated: " + otp.toString());
+	    return otp.toString();
+	}
+	
+	// Method to generate a random password
+	private String generateRandomPassword() {
+	    byte[] randomBytes = new byte[16];
+	    SecureRandom random = new SecureRandom();
+	    random.nextBytes(randomBytes);
+	    return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes).substring(0, 16); // Return a substring to ensure length
+	}
+
+	// method to delete a user account based on username
+	public void deleteUserAccount(String username) {
+	    String deleteUserSql = "DELETE FROM users WHERE username = ?";
+
+	    try (PreparedStatement deleteStmt = connection.prepareStatement(deleteUserSql)) {
+	        deleteStmt.setString(1, username);
+	        int rowsAffected = deleteStmt.executeUpdate();
+
+	        if (rowsAffected > 0) {
+	            System.out.println("User account deleted successfully: " + username);
+	        } else {
+	            System.out.println("User not found: " + username);
+	        }
+	    } catch (SQLException e) {
+	        e.printStackTrace();
+	    }
+	}
+
+	// Command line display Users. Using for debug purposes.
 	public void displayUsersByUser() throws UnsupportedEncodingException, Exception {
 	    String sql = "SELECT users.id, users.email, users.username, users.hashedPassword, users.randSalt, "
-	               + "roles.role_name AS role, users.firstName "
+	               + "GROUP_CONCAT(roles.role_name SEPARATOR ', ') AS roles, users.firstName "
 	               + "FROM users "
 	               + "LEFT JOIN user_roles ON users.id = user_roles.user_id "
-	               + "LEFT JOIN roles ON user_roles.role_id = roles.id"; 
-	    
+	               + "LEFT JOIN roles ON user_roles.role_id = roles.id "
+	               + "GROUP BY users.id"; 
+
 	    Statement stmt = connection.createStatement();
 	    ResultSet rs = stmt.executeQuery(sql); 
 
@@ -454,17 +629,18 @@ class DatabaseHelper {
 	        String username = rs.getString("username");
 	        String password = rs.getString("hashedPassword"); 
 	        String randSalt = rs.getString("randSalt");  
-	        String role = rs.getString("role"); 
+	        String roles = rs.getString("roles"); 
 	        String firstName = rs.getString("firstName");
 
 	        // Display values 
-	        System.out.print("ID: " + id); 
-	        System.out.print(", Username: " + username); 
-	        System.out.print(", Email: " + email); 
-	        System.out.println(", Hashed Password: " + Base64.getDecoder().decode(password)); 
-	        System.out.println(", Rand Salt: " + Base64.getDecoder().decode(randSalt));
-	        System.out.println(", Role: " + role); 
-	        System.out.println(", First Name: " + firstName); 
+	        System.out.println("ID: " + id); 
+	        System.out.println("Username: " + username); 
+	        System.out.println("Email: " + email); 
+	        System.out.println("Hashed Password: " + Base64.getDecoder().decode(password)); 
+	        System.out.println("Rand Salt: " + Base64.getDecoder().decode(randSalt));
+	        System.out.println("Roles: " + roles); 
+	        System.out.println("First Name: " + firstName); 
+	        System.out.println("----------------------------------------"); // Separator for clarity
 	    }
 	}
 
@@ -509,5 +685,299 @@ class DatabaseHelper {
 	    tables.close(); // Close the tables ResultSet
 	}
 	
+	public int getRoleId(String roleName) throws SQLException {
+	    String sql = "SELECT id FROM roles WHERE role_name = ?";
+	    
+	    try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+	        pstmt.setString(1, roleName);
+	        try (ResultSet rs = pstmt.executeQuery()) {
+	            if (rs.next()) {
+	                return rs.getInt("id"); // Return the role ID
+	            } else {
+	                throw new SQLException("Role not found: " + roleName); // Handle role not found
+	            }
+	        }
+	    }
+	}
+	
+	// Load users into the TableView
+	public void loadUsersIntoTable(TableView<List<String>> tableView) {
+	    String sql = "SELECT users.username, CONCAT(users.firstName, ' ', users.lastName) AS name, GROUP_CONCAT(roles.role_name) AS roles " +
+	                 "FROM users " +
+	                 "LEFT JOIN user_roles ON users.id = user_roles.user_id " +
+	                 "LEFT JOIN roles ON user_roles.role_id = roles.id " +
+	                 "GROUP BY users.id";
+
+	    try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+	        while (rs.next()) {
+	            String username = rs.getString("username");
+	            String name = rs.getString("name");
+	            String roles = rs.getString("roles");
+
+	            // Create a list of user details
+	            List<String> userDetails = new ArrayList<>();
+	            userDetails.add(username);
+	            userDetails.add(name);
+	            userDetails.add(roles);
+
+	            // Add the user details list to the TableView
+	            tableView.getItems().add(userDetails);
+	        }
+	    } catch (SQLException e) {
+	        e.printStackTrace();
+	    }
+	}
+	
+	
+	public void listUserAccounts() throws SQLException {
+	    String sql = "SELECT users.id, users.username, users.firstName, roles.role_name " +
+	                 "FROM users " +
+	                 "LEFT JOIN user_roles ON users.id = user_roles.user_id " +
+	                 "LEFT JOIN roles ON user_roles.role_id = roles.id";
+	    
+	    try (Statement stmt = connection.createStatement();
+	         ResultSet rs = stmt.executeQuery(sql)) {
+	        
+	        while (rs.next()) {
+	            int id = rs.getInt("id");
+	            String username = rs.getString("username");
+	            String firstName = rs.getString("firstName");
+	            String role = rs.getString("role_name");
+
+	            System.out.println("ID: " + id + ", Username: " + username + 
+	                               ", First Name: " + firstName + ", Role: " + role);
+	        }
+	    }
+	}
+	
+	
+	public void manageUserRole(int userId, String role, boolean addRole) throws Exception {
+	    String roleSQL;
+	    
+	    if (addRole) {
+	        roleSQL = "INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)";
+	        int roleId = getRoleId(role); // Method to get role ID based on role name
+	        try (PreparedStatement pstmt = connection.prepareStatement(roleSQL)) {
+	            pstmt.setInt(1, userId);
+	            pstmt.setInt(2, roleId);
+	            pstmt.executeUpdate();
+	        }
+	    } else {
+	        roleSQL = "DELETE FROM user_roles WHERE user_id = ? AND role_id = ?";
+	        int roleId = getRoleId(role);
+	        try (PreparedStatement pstmt = connection.prepareStatement(roleSQL)) {
+	            pstmt.setInt(1, userId);
+	            pstmt.setInt(2, roleId);
+	            pstmt.executeUpdate();
+	        }
+	    }
+	}
+	
+	public long createHelpArticle(HelpArticle article) throws SQLException {
+	    String insertArticle = "INSERT INTO help_articles (header, title, short_description, body_content, keywords, links) "
+	            + "VALUES (?, ?, ?, ?, ?, ?)";
+
+	    try (PreparedStatement pstmt = connection.prepareStatement(insertArticle, Statement.RETURN_GENERATED_KEYS)) {
+	        pstmt.setString(1, article.getHeader());
+	        pstmt.setString(2, article.getTitle());
+	        pstmt.setString(3, article.getShortDescription());
+	        pstmt.setString(4, article.getBodyContent());
+	        pstmt.setString(5, String.join(",", article.getKeywords())); // Convert list to comma-separated string
+	        pstmt.setString(6, String.join(",", article.getLinks()));    // Convert list to comma-separated string
+
+	        int affectedRows = pstmt.executeUpdate();
+	        if (affectedRows == 0) {
+	            throw new SQLException("Creating article failed, no rows affected.");
+	        }
+
+	        // Get the generated article ID
+	        try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+	            if (generatedKeys.next()) {
+	                long articleId = generatedKeys.getLong(1);
+
+	                // Handle groups
+	                addArticleGroups(articleId, article.getGroups());
+
+	                return articleId;
+	            } else {
+	                throw new SQLException("Creating article failed, no ID obtained.");
+	            }
+	        }
+	    }
+	}
+
+	private void addArticleGroups(long articleId, List<String> groupNames) throws SQLException {
+	    String insertGroup = "INSERT INTO article_groups (article_id, group_name) VALUES (?, ?)";
+	    try (PreparedStatement pstmt = connection.prepareStatement(insertGroup)) {
+	        for (String groupName : groupNames) {
+	            pstmt.setLong(1, articleId);
+	            pstmt.setString(2, groupName);
+	            pstmt.addBatch();
+	        }
+	        pstmt.executeBatch();
+	    }
+	}
+	public List<HelpArticle> getAllHelpArticles() throws SQLException {
+	    String query = "SELECT * FROM help_articles";
+	    List<HelpArticle> articles = new ArrayList<>();
+
+	    try (Statement stmt = connection.createStatement();
+	         ResultSet rs = stmt.executeQuery(query)) {
+	        while (rs.next()) {
+	            HelpArticle article = extractHelpArticleFromResultSet(rs);
+	            articles.add(article);
+	        }
+	    }
+	    return articles;
+	}
+
+	private HelpArticle extractHelpArticleFromResultSet(ResultSet rs) throws SQLException {
+	    HelpArticle article = new HelpArticle();
+	    article.setId(rs.getLong("id"));
+	    article.setHeader(rs.getString("header"));
+	    article.setTitle(rs.getString("title"));
+	    article.setShortDescription(rs.getString("short_description"));
+	    article.setBodyContent(rs.getString("body_content"));
+
+	    // Convert comma-separated strings back to lists
+	    String keywords = rs.getString("keywords");
+	    if (keywords != null && !keywords.isEmpty()) {
+	        article.setKeywords(Arrays.asList(keywords.split(",")));
+	    }
+
+	    String links = rs.getString("links");
+	    if (links != null && !links.isEmpty()) {
+	        article.setLinks(Arrays.asList(links.split(",")));
+	    }
+
+	    // Get groups associated with the article
+	    article.setGroups(getGroupsForArticle(article.getId()));
+
+	    return article;
+	}
+
+	private List<String> getGroupsForArticle(long articleId) throws SQLException {
+	    String query = "SELECT group_name FROM article_groups WHERE article_id = ?";
+	    List<String> groups = new ArrayList<>();
+	    try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+	        pstmt.setLong(1, articleId);
+	        try (ResultSet rs = pstmt.executeQuery()) {
+	            while (rs.next()) {
+	                groups.add(rs.getString("group_name"));
+	            }
+	        }
+	    }
+	    return groups;
+	}
+	public boolean updateHelpArticle(HelpArticle article) throws SQLException {
+	    String updateArticle = "UPDATE help_articles SET header = ?, title = ?, short_description = ?, "
+	            + "body_content = ?, keywords = ?, links = ? WHERE id = ?";
+
+	    try (PreparedStatement pstmt = connection.prepareStatement(updateArticle)) {
+	        pstmt.setString(1, article.getHeader());
+	        pstmt.setString(2, article.getTitle());
+	        pstmt.setString(3, article.getShortDescription());
+	        pstmt.setString(4, article.getBodyContent());
+	        pstmt.setString(5, String.join(",", article.getKeywords()));
+	        pstmt.setString(6, String.join(",", article.getLinks()));
+	        pstmt.setLong(7, article.getId());
+
+	        int affectedRows = pstmt.executeUpdate();
+
+	        // Update groups
+	        updateArticleGroups(article.getId(), article.getGroups());
+
+	        return affectedRows > 0;
+	    }
+	}
+
+	private void updateArticleGroups(long articleId, List<String> groupNames) throws SQLException {
+	    // First, delete existing groups
+	    String deleteGroups = "DELETE FROM article_groups WHERE article_id = ?";
+	    try (PreparedStatement pstmt = connection.prepareStatement(deleteGroups)) {
+	        pstmt.setLong(1, articleId);
+	        pstmt.executeUpdate();
+	    }
+
+	    // Then, add new groups
+	    addArticleGroups(articleId, groupNames);
+	}
+	public boolean deleteHelpArticle(long articleId) throws SQLException {
+	    String deleteArticle = "DELETE FROM help_articles WHERE id = ?";
+	    try (PreparedStatement pstmt = connection.prepareStatement(deleteArticle)) {
+	        pstmt.setLong(1, articleId);
+	        int affectedRows = pstmt.executeUpdate();
+	        return affectedRows > 0;
+	        		}
+	    }
+	
+	public void backupHelpArticles(String filePath, List<HelpArticle> articlesToBackup) throws IOException {
+	    ObjectMapper objectMapper = new ObjectMapper(); // From Jackson library
+	    objectMapper.enable(SerializationFeature.INDENT_OUTPUT); // For readable JSON
+	    objectMapper.writeValue(new File(filePath), articlesToBackup);
+	}
+	public void restoreHelpArticles(String filePath, boolean removeExisting) throws IOException, SQLException {
+	    ObjectMapper objectMapper = new ObjectMapper();
+	    List<HelpArticle> articlesFromBackup = objectMapper.readValue(new File(filePath), new TypeReference<List<HelpArticle>>() {});
+
+	    if (removeExisting) {
+	        // Delete all existing help articles
+	        String deleteAllArticles = "DELETE FROM help_articles";
+	        try (Statement stmt = connection.createStatement()) {
+	            stmt.executeUpdate(deleteAllArticles);
+	        }
+	    }
+
+	    // Insert or merge articles
+	    for (HelpArticle article : articlesFromBackup) {
+	        if (!doesHelpArticleExist(article.getId())) {
+	            // Insert new article
+	            createHelpArticle(article);
+	        } else {
+	            // Update existing article or skip
+	            updateHelpArticle(article);
+	        }
+	    }
+	}
+
+	private boolean doesHelpArticleExist(long articleId) throws SQLException {
+	    String query = "SELECT COUNT(*) FROM help_articles WHERE id = ?";
+	    try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+	        pstmt.setLong(1, articleId);
+	        try (ResultSet rs = pstmt.executeQuery()) {
+	            if (rs.next()) {
+	                return rs.getInt(1) > 0;
+	            }
+	        }
+	    }
+	    return false;
+	}
+	public List<String> getAllGroups() throws SQLException {
+	    String query = "SELECT DISTINCT group_name FROM article_groups";
+	    List<String> groups = new ArrayList<>();
+	    try (Statement stmt = connection.createStatement();
+	         ResultSet rs = stmt.executeQuery(query)) {
+	        while (rs.next()) {
+	            groups.add(rs.getString("group_name"));
+	        }
+	    }
+	    return groups;
+	}
+	public List<HelpArticle> getHelpArticlesByGroup(String groupName) throws SQLException {
+	    String query = "SELECT ha.* FROM help_articles ha "
+	            + "JOIN article_groups ag ON ha.id = ag.article_id "
+	            + "WHERE ag.group_name = ?";
+	    List<HelpArticle> articles = new ArrayList<>();
+	    try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+	        pstmt.setString(1, groupName);
+	        try (ResultSet rs = pstmt.executeQuery()) {
+	            while (rs.next()) {
+	                HelpArticle article = extractHelpArticleFromResultSet(rs);
+	                articles.add(article);
+	            }
+	        }
+	    }
+	    return articles;
+	}
 
 }
